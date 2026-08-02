@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: bhaskar-trade-terminal
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: APP_MODE
+        value: live
+      - key: DHAN_CLIENT_ID
+        sync: false
+      - key: DHAN_ACCESS_TOKEN
+        sync: false
+      - key: NIFTY_SECURITY_ID
+        value: "13"
+      - key: NIFTY_SEGMENT
+        value: IDX_I
+      - key: DEFAULT_LOT_SIZE
+        value: "65"
+      - key: DEFAULT_TARGET_NET
+        value: "5000"
+      - key: CHARGE_BUFFER
+        value: "150"

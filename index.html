@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Bhaskar Trade Terminal</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <div class="eyebrow">BHASKAR'S NIFTY RISK ENGINE</div>
+      <h1>Live Exit Target Terminal</h1>
+    </div>
+    <div id="status" class="status">Connecting…</div>
+  </header>
+
+  <main>
+    <section class="hero-grid">
+      <article class="card spot-card">
+        <span>NIFTY Spot</span>
+        <strong id="spot">—</strong>
+        <small id="updated">Waiting for feed</small>
+      </article>
+
+      <article class="card">
+        <label>Expiry
+          <select id="expiry"></select>
+        </label>
+      </article>
+
+      <article class="card">
+        <label>Lots
+          <input id="lots" type="number" inputmode="numeric" min="1" step="1" value="1">
+        </label>
+        <small id="quantity">Quantity: 65</small>
+      </article>
+
+      <article class="card">
+        <label>Minimum Net Profit
+          <input id="target" type="number" inputmode="decimal" min="1" step="500" value="5000">
+        </label>
+      </article>
+    </section>
+
+    <section class="trade-panel card">
+      <div class="trade-inputs">
+        <label>Option Side
+          <select id="side">
+            <option value="ce">CE</option>
+            <option value="pe">PE</option>
+          </select>
+        </label>
+
+        <label>Strike
+          <select id="strike"></select>
+        </label>
+
+        <label>Entry Premium
+          <input id="entry" type="number" inputmode="decimal" step="0.05">
+        </label>
+
+        <label>Charge Buffer
+          <input id="charges" type="number" inputmode="decimal" step="10">
+        </label>
+      </div>
+
+      <div class="target-grid">
+        <div class="metric primary">
+          <span>Required Exit Premium</span>
+          <strong id="exitPrice">—</strong>
+        </div>
+
+        <div class="metric">
+          <span>Premium Gain Needed</span>
+          <strong id="premiumGain">—</strong>
+        </div>
+
+        <div class="metric">
+          <span>Estimated NIFTY Move</span>
+          <strong id="spotMove">—</strong>
+        </div>
+
+        <div class="metric">
+          <span>Estimated Spot Target</span>
+          <strong id="spotTarget">—</strong>
+        </div>
+
+        <div class="metric">
+          <span>Net P/L at Current LTP</span>
+          <strong id="currentPnl">—</strong>
+        </div>
+
+        <div class="metric">
+          <span>Target Status</span>
+          <strong id="targetStatus">WAIT</strong>
+        </div>
+      </div>
+
+      <div class="progress-wrap">
+        <div class="progress-label">
+          <span>Progress toward target</span>
+          <span id="progressText">0%</span>
+        </div>
+        <div class="progress">
+          <div id="progressBar"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card chain-card">
+      <div class="section-head">
+        <div>
+          <h2>Live Option Chain</h2>
+          <p>Tap any CE or PE value to load that strike into the calculator.</p>
+        </div>
+        <input id="filter" type="search" placeholder="Search strike">
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>CE LTP</th>
+              <th>CE Δ</th>
+              <th>CE OI Chg</th>
+              <th>Strike</th>
+              <th>PE OI Chg</th>
+              <th>PE Δ</th>
+              <th>PE LTP</th>
+            </tr>
+          </thead>
+          <tbody id="chainBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="warning">
+      Estimates use current Delta and Gamma. Actual execution can differ due to IV,
+      Theta, spread, slippage and rapidly changing Greeks. This version does not place orders.
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
