@@ -1,66 +1,55 @@
-# Bhaskar Trade Terminal v2
+# Bhaskar Trade Terminal V3 — Sprint 1
 
-Cloud-hosted NIFTY option-chain and exit-target calculator.
+This development build introduces:
 
-## Current features
+- modular backend architecture;
+- robust Dhan option-chain response normalization;
+- normalized live option contracts;
+- strike viability endpoint;
+- required exit premium and NIFTY movement;
+- liquidity, spread, Delta, Gamma and OI scoring;
+- nearby better-strike suggestion;
+- first V3 dashboard;
+- tests for parsing and viability calculations.
 
-- Live Dhan option-chain integration
-- CE/PE LTP and Delta display
-- OI change display
-- Lots input
-- Default ₹5,000 net-profit target
-- Required option exit premium
-- Approximate NIFTY move and spot target
-- Current estimated P/L
-- Mobile-friendly dashboard
-- Demo mode for testing
+## Use only on `v3-dev`
 
-## Repository structure
+Do not upload this package into `main` yet.
 
-All application files stay in the repository root:
+## Deployment test
 
-```text
-main.py
-index.html
-app.js
-styles.css
-requirements.txt
-render.yaml
-```
+Create a separate Render service or Preview Environment pointing to `v3-dev`.
+Do not switch the current production service away from `main`.
 
-No `static` directory is required.
+## API
 
-## Render deployment
+`POST /api/viability`
 
-The included `render.yaml` creates the web service automatically.
-
-Required protected environment variables:
-
-```text
-DHAN_CLIENT_ID
-DHAN_ACCESS_TOKEN
-```
-
-Do not store credentials in GitHub.
-
-## Health check
-
-After deployment, open:
-
-```text
-https://YOUR-SERVICE.onrender.com/api/health
-```
-
-Expected:
+Example:
 
 ```json
 {
-  "status": "ok",
-  "mode": "live",
-  "credentials_configured": true
+  "expiry": "2026-08-04",
+  "strike": 24300,
+  "side": "ce",
+  "lots": 4,
+  "target_net_profit": 5000,
+  "entry_price": 106.10,
+  "charge_buffer": 150,
+  "expected_range_remaining": 80
 }
 ```
 
-## Important
+## Current scope
 
-This version is read-only and does not place orders.
+The verdict currently uses:
+
+- Delta
+- Gamma
+- bid/ask spread
+- OI and OI change
+- volume
+- required NIFTY move
+- optional expected remaining range
+
+The full NIFTY breadth, VIX, chart structure, global macro and news framework will be added in later sprints.

@@ -1,292 +1,171 @@
 const $ = (id) => document.getElementById(id);
 
-const state = {
-  chain: {},
-  spot: 0,
-  config: {},
-  selectedStrike: null,
-  lastEntryAuto: true
-};
+const state = { chain: null, config: null, lastEntryAuto: true };
 
-const money = (n) =>
-  Number.isFinite(n)
-    ? `₹${n.toLocaleString("en-IN", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      })}`
-    : "—";
+const money = n => Number.isFinite(n) ? `₹${n.toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}` : "—";
+const num = n => Number.isFinite(n) ? n.toLocaleString("en-IN",{maximumFractionDigits:2}) : "—";
 
-const num = (n) =>
-  Number.isFinite(n)
-    ? n.toLocaleString("en-IN", { maximumFractionDigits: 2 })
-    : "—";
-
-async function getJSON(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
-  return response.json();
-}
-
-function parseExpiries(payload) {
-  const value = payload.data || payload;
-  if (Array.isArray(value)) return value;
-  if (Array.isArray(value?.data)) return value.data;
-  return [];
+async function getJSON(url, options={}) {
+  const r = await fetch(url, options);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
 }
 
 async function init() {
   try {
     state.config = await getJSON("/api/config");
-    $("lots").value = 1;
     $("target").value = state.config.target_net;
-    $("charges").value = state.config.charge_buffer;
     updateQuantity();
 
-    const expiryPayload = await getJSON("/api/expiries");
-    const expiries = parseExpiries(expiryPayload);
-
-    $("expiry").innerHTML = expiries
-      .map((expiry) => `<option>${expiry}</option>`)
-      .join("");
-
-    if (!expiries.length) {
-      throw new Error("No active expiries returned.");
-    }
+    const exp = await getJSON("/api/expiries");
+    const expiries = exp.data || [];
+    $("expiry").innerHTML = expiries.map(x=>`<option>${x}</option>`).join("");
+    if (!expiries.length) throw new Error("No expiry returned.");
 
     await refresh();
     setInterval(refresh, (state.config.poll_seconds || 3) * 1000);
-  } catch (error) {
+  } catch (e) {
     setStatus("ERROR", false);
-    console.error(error);
-    alert(`Setup error: ${error.message}`);
+    console.error(e);
   }
+}
+
+function setStatus(text, live) {
+  $("status").textContent = text;
+  $("status").className = live ? "status live" : "status";
 }
 
 async function refresh() {
   try {
-    const expiry = encodeURIComponent($("expiry").value);
-    const payload = await getJSON(`/api/chain?expiry=${expiry}`);
-    const data = payload.data || {};
-
-    state.chain = data.oc || {};
-    state.spot = Number(data.last_price || 0);
-
-    $("spot").textContent = num(state.spot);
-    $("updated").textContent =
-      `Updated ${new Date(payload.as_of || Date.now()).toLocaleTimeString()} · ` +
-      `${payload.mode || state.config.mode}`;
-
-    setStatus(payload.mode === "live" ? "LIVE" : "DEMO", true);
+    state.chain = await getJSON(`/api/chain?expiry=${encodeURIComponent($("expiry").value)}`);
+    $("spot").textContent = num(Number(state.chain.spot || 0));
+    $("updated").textContent = `Updated ${new Date(state.chain.as_of).toLocaleTimeString()} · ${state.chain.mode}`;
+    setStatus(state.chain.mode === "live" ? "LIVE" : "DEMO", true);
     populateStrikes();
     renderChain();
-    calculate();
-  } catch (error) {
+  } catch (e) {
     setStatus("FEED ERROR", false);
-    console.error(error);
+    console.error(e);
   }
 }
 
-function setStatus(text, active) {
-  $("status").textContent = text;
-  $("status").className = active ? "status live" : "status";
+function contracts(side) {
+  return (state.chain?.contracts || []).filter(x => x.side === side);
 }
 
-function strikeKeys() {
-  return Object.keys(state.chain)
-    .map(Number)
-    .sort((a, b) => a - b);
-}
-
-function getNode(strike) {
-  return (
-    state.chain[Number(strike).toFixed(6)] ||
-    state.chain[String(Number(strike))]
-  );
+function getContract(strike, side) {
+  return (state.chain?.contracts || []).find(x => x.side === side && Math.abs(Number(x.strike)-Number(strike))<0.01);
 }
 
 function populateStrikes() {
-  const keys = strikeKeys();
-  if (!keys.length) return;
-
-  const oldStrike = Number($("strike").value);
-  const atm = keys.reduce((a, b) =>
-    Math.abs(b - state.spot) < Math.abs(a - state.spot) ? b : a
-  );
-
-  const selected =
-    oldStrike && keys.includes(oldStrike)
-      ? oldStrike
-      : state.selectedStrike || atm;
-
-  $("strike").innerHTML = keys
-    .map(
-      (strike) =>
-        `<option value="${strike}" ${strike === selected ? "selected" : ""}>${strike}</option>`
-    )
-    .join("");
-
-  state.selectedStrike = selected;
-  syncEntryFromLtp();
+  const strikes = [...new Set((state.chain?.contracts || []).map(x=>Number(x.strike)))].sort((a,b)=>a-b);
+  if (!strikes.length) return;
+  const old = Number($("strike").value);
+  const spot = Number(state.chain.spot || 0);
+  const atm = strikes.reduce((a,b)=>Math.abs(b-spot)<Math.abs(a-spot)?b:a);
+  const selected = strikes.includes(old) ? old : atm;
+  $("strike").innerHTML = strikes.map(x=>`<option value="${x}" ${x===selected?"selected":""}>${x}</option>`).join("");
+  syncEntry();
 }
 
-function getOption() {
-  const strike = Number($("strike").value);
-  const side = $("side").value;
-  return getNode(strike)?.[side];
-}
-
-function syncEntryFromLtp() {
-  const option = getOption();
-  if (option && state.lastEntryAuto) {
-    $("entry").value = Number(
-      option.top_ask_price || option.last_price || 0
-    ).toFixed(2);
+function syncEntry() {
+  const c = getContract($("strike").value, $("side").value);
+  if (c && state.lastEntryAuto) {
+    $("entry").value = Number(c.ask || c.last_price || 0).toFixed(2);
   }
 }
 
 function updateQuantity() {
   const lots = Math.max(1, Number($("lots").value || 1));
-  const lotSize = Number(state.config.lot_size || 65);
-  $("quantity").textContent = `Quantity: ${lots * lotSize}`;
+  const qty = lots * Number(state.config?.lot_size || 65);
+  $("quantity").textContent = `Quantity: ${qty}`;
 }
 
-function solveSpotMove(requiredPremiumGain, deltaAbs, gamma) {
-  if (requiredPremiumGain <= 0) return 0;
+async function analyse() {
+  const payload = {
+    expiry: $("expiry").value,
+    strike: Number($("strike").value),
+    side: $("side").value,
+    lots: Number($("lots").value),
+    target_net_profit: Number($("target").value),
+    entry_price: Number($("entry").value),
+    charge_buffer: Number(state.config.charge_buffer || 150),
+    expected_range_remaining: $("expectedRange").value ? Number($("expectedRange").value) : null
+  };
 
-  if (gamma > 0.000001) {
-    const discriminant =
-      deltaAbs * deltaAbs + 2 * gamma * requiredPremiumGain;
-    return (-deltaAbs + Math.sqrt(discriminant)) / gamma;
+  try {
+    const r = await getJSON("/api/viability", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+
+    $("verdict").textContent = r.verdict.replace("_"," ");
+    $("verdict").className =
+      r.verdict === "VIABLE" ? "verdict-good" :
+      r.verdict === "MARGINAL" ? "verdict-mid" : "verdict-bad";
+
+    $("score").textContent = `${r.score}/100`;
+    $("requiredExit").textContent = money(r.required_exit_premium);
+    $("requiredMove").textContent = `${$("side").value==="ce"?"+":"−"}${num(r.required_nifty_move)} pts`;
+    $("spotTarget").textContent = num(r.estimated_spot_target);
+    $("betterStrike").textContent = r.better_strike ? `${r.better_strike} (${r.better_strike_score})` : "Selected strike is best";
+    $("delta").textContent = r.delta_efficiency;
+    $("gamma").textContent = r.gamma_support;
+    $("spread").textContent = `${r.spread_pct}%`;
+    $("liquidity").textContent = `${r.liquidity_score}/100`;
+    $("oiSignal").textContent = r.oi_signal;
+    $("qtyDetail").textContent = r.quantity;
+    $("reasons").innerHTML = r.reasons.map(x=>`<li>${x}</li>`).join("");
+  } catch (e) {
+    alert(`Viability analysis failed: ${e.message}`);
   }
-
-  return requiredPremiumGain / Math.max(deltaAbs, 0.01);
-}
-
-function calculate() {
-  const option = getOption();
-  if (!option) return;
-
-  const lots = Math.max(1, Number($("lots").value || 1));
-  const lotSize = Number(state.config.lot_size || 65);
-  const quantity = lots * lotSize;
-
-  const targetNet = Math.max(0, Number($("target").value || 0));
-  const charges = Math.max(0, Number($("charges").value || 0));
-  const entry = Math.max(0, Number($("entry").value || 0));
-  const ltp = Number(option.last_price || 0);
-
-  const delta = Math.abs(Number(option.greeks?.delta || 0));
-  const gamma = Math.abs(Number(option.greeks?.gamma || 0));
-
-  const requiredGross = targetNet + charges;
-  const premiumGain = requiredGross / quantity;
-  const exitPrice = entry + premiumGain;
-  const move = solveSpotMove(premiumGain, delta, gamma);
-
-  const side = $("side").value;
-  const signedMove = side === "ce" ? move : -move;
-  const targetSpot = state.spot + signedMove;
-
-  const currentPnl = (ltp - entry) * quantity - charges;
-  const progress =
-    targetNet > 0
-      ? Math.max(0, Math.min(100, (currentPnl / targetNet) * 100))
-      : 0;
-
-  $("exitPrice").textContent = money(exitPrice);
-  $("premiumGain").textContent = money(premiumGain);
-  $("spotMove").textContent = `${side === "ce" ? "+" : "−"}${num(move)} pts`;
-  $("spotTarget").textContent = num(targetSpot);
-  $("currentPnl").textContent = money(currentPnl);
-  $("currentPnl").className = currentPnl >= 0 ? "pos" : "neg";
-  $("targetStatus").textContent =
-    currentPnl >= targetNet ? "EXIT TARGET MET" : "WAIT";
-  $("targetStatus").className =
-    currentPnl >= targetNet ? "pos" : "";
-
-  $("progressText").textContent = `${progress.toFixed(0)}%`;
-  $("progressBar").style.width = `${progress}%`;
 }
 
 function renderChain() {
   const filter = $("filter").value.trim();
-  const keys = strikeKeys();
-  if (!keys.length) return;
-
-  const atm = keys.reduce((a, b) =>
-    Math.abs(b - state.spot) < Math.abs(a - state.spot) ? b : a
-  );
-
+  const strikes = [...new Set((state.chain?.contracts || []).map(x=>Number(x.strike)))].sort((a,b)=>a-b);
   const rows = [];
 
-  for (const strike of keys) {
+  for (const strike of strikes) {
     if (filter && !String(strike).includes(filter)) continue;
+    const ce = getContract(strike,"ce");
+    const pe = getContract(strike,"pe");
+    if (!ce || !pe) continue;
 
-    const node = getNode(strike);
-    if (!node?.ce || !node?.pe) continue;
+    const ceChange = Number(ce.oi)-Number(ce.previous_oi);
+    const peChange = Number(pe.oi)-Number(pe.previous_oi);
 
-    const ce = node.ce;
-    const pe = node.pe;
-
-    const ceChange = Number(ce.oi || 0) - Number(ce.previous_oi || 0);
-    const peChange = Number(pe.oi || 0) - Number(pe.previous_oi || 0);
-
-    rows.push(`
-      <tr class="${strike === atm ? "atm" : ""}" data-strike="${strike}">
-        <td data-side="ce">${num(Number(ce.last_price))}</td>
-        <td>${num(Number(ce.greeks?.delta))}</td>
-        <td class="${ceChange >= 0 ? "pos" : "neg"}">${num(ceChange / 100000)}L</td>
-        <td>${strike}</td>
-        <td class="${peChange >= 0 ? "pos" : "neg"}">${num(peChange / 100000)}L</td>
-        <td>${num(Number(pe.greeks?.delta))}</td>
-        <td data-side="pe">${num(Number(pe.last_price))}</td>
-      </tr>
-    `);
+    rows.push(`<tr data-strike="${strike}">
+      <td data-side="ce">${num(Number(ce.last_price))}</td>
+      <td>${num(Number(ce.greeks.delta))}</td>
+      <td>${num(Number(ce.implied_volatility))}</td>
+      <td class="${ceChange>=0?"pos":"neg"}">${num(ceChange/100000)}L</td>
+      <td>${strike}</td>
+      <td class="${peChange>=0?"pos":"neg"}">${num(peChange/100000)}L</td>
+      <td>${num(Number(pe.implied_volatility))}</td>
+      <td>${num(Number(pe.greeks.delta))}</td>
+      <td data-side="pe">${num(Number(pe.last_price))}</td>
+    </tr>`);
   }
 
   $("chainBody").innerHTML = rows.join("");
-
-  $("chainBody")
-    .querySelectorAll("td[data-side]")
-    .forEach((cell) => {
-      cell.addEventListener("click", () => {
-        const row = cell.closest("tr");
-        $("strike").value = row.dataset.strike;
-        $("side").value = cell.dataset.side;
-        state.lastEntryAuto = true;
-        syncEntryFromLtp();
-        calculate();
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      });
+  $("chainBody").querySelectorAll("td[data-side]").forEach(cell=>{
+    cell.addEventListener("click",()=>{
+      $("strike").value = cell.closest("tr").dataset.strike;
+      $("side").value = cell.dataset.side;
+      state.lastEntryAuto = true;
+      syncEntry();
+      window.scrollTo({top:0,behavior:"smooth"});
     });
+  });
 }
 
-["lots", "target", "charges"].forEach((id) =>
-  $(id).addEventListener("input", () => {
-    updateQuantity();
-    calculate();
-  })
-);
-
-$("entry").addEventListener("input", () => {
-  state.lastEntryAuto = false;
-  calculate();
-});
-
-$("side").addEventListener("change", () => {
-  state.lastEntryAuto = true;
-  syncEntryFromLtp();
-  calculate();
-});
-
-$("strike").addEventListener("change", () => {
-  state.lastEntryAuto = true;
-  syncEntryFromLtp();
-  calculate();
-});
-
+$("analyseBtn").addEventListener("click", analyse);
+$("lots").addEventListener("input", updateQuantity);
+$("side").addEventListener("change", ()=>{state.lastEntryAuto=true;syncEntry();});
+$("strike").addEventListener("change", ()=>{state.lastEntryAuto=true;syncEntry();});
+$("entry").addEventListener("input", ()=>{state.lastEntryAuto=false;});
 $("expiry").addEventListener("change", refresh);
 $("filter").addEventListener("input", renderChain);
 
